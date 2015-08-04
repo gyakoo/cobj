@@ -50,6 +50,9 @@ int main()
 	GLFWwindow* window;
 	const GLFWvidmode* mode;
 
+
+  cobj obj={0};
+  cobj_load_from_filename("../teapotball.obj", &obj);
 	if (!glfwInit())
 		return -1;
 
