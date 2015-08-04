@@ -14,6 +14,7 @@ solution "cobj"
       language "C++"
       files { "example/"..v..".c", "example/*.h", "src/*.h" }
       includedirs { "example", "src" }      
+      debugdir "data/"
       targetdir "build"
           libdirs {"./src/GLFW/lib"}
      
