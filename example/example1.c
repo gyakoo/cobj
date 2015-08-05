@@ -24,6 +24,7 @@
 // ortho proj
 double viewbounds[]={-200, 200, -200, 200, -300, 300};
 cobj g_obj={0};
+int g_wf=0;
 
 float maxf(float a, float b)  { return a>b?a:b;}
 void swapf(float* a, float* b){ const float t=*a; *a=*b; *b=t; }
@@ -57,7 +58,7 @@ void adjustOrthoBounds(cobj* o)
 void drawObj(cobj* o)
 {
   static float a=0.0f;
-  unsigned int i,j,f;
+  unsigned int i,j,f,k,c;
   float tx=0.0f,ty=0.0f;
   cobjXYZ* xyz;
   cobjGr* gr;
@@ -72,15 +73,23 @@ void drawObj(cobj* o)
   for (i=0;i<o->g_c;++i)
   {
     gr=o->g+i;
+    c=gr->f_c/3;
+    glBegin(GL_TRIANGLES);
 
-    glBegin(gr->ipf==3?GL_TRIANGLES:GL_QUADS);
-    for (f=0,j=0;j<gr->f_c;++j)
+    for (j=0; j<c; ++j)
     {
-      glVertex3fv((const GLfloat*)(o->xyz + gr->v[f++]));
-      glVertex3fv((const GLfloat*)(o->xyz + gr->v[f++]));
-      glVertex3fv((const GLfloat*)(o->xyz + gr->v[f++]));
-      if ( gr->ipf==4 )
-        glVertex3fv((const GLfloat*)(o->xyz + gr->v[f++]));
+      for (k=0;k<3;++k)
+      {
+        f=gr->v[j*3+k];
+        if ( f>o->xyz_c )  
+          continue;
+        glVertex3fv((const GLfloat*)(o->xyz + f));
+        if ( gr->n )
+        {
+          f=gr->n[j*3+k];
+          glNormal3fv((const GLfloat*)(o->n+f));
+        }
+      }
     }
     glEnd();
   }
@@ -102,7 +111,7 @@ void frame(GLFWwindow* window, int w, int h)
 	glOrtho(viewbounds[0], viewbounds[1], viewbounds[2], viewbounds[3], viewbounds[4], viewbounds[5]);
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
-	glDisable(GL_DEPTH_TEST);
+	//glDisable(GL_DEPTH_TEST);
 	glColor4ub(240,240,240,255);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);  
@@ -132,6 +141,27 @@ void keycallback(GLFWwindow* w, int key, int scancode, int action, int mods)
   {
     loadNextObj(&g_obj);
   }
+  if ( key==GLFW_KEY_W && action==GLFW_PRESS )
+  {
+    g_wf = 1-g_wf;
+    glPolygonMode(GL_FRONT_AND_BACK, g_wf?GL_LINE:GL_FILL);
+  }
+}
+
+void test()
+{
+  char* line="1/1/1 2/2/2 3/3/3 4/4/4\n";
+  cobjGr gr={0};
+
+  cobj_count_faces(line,&gr);
+
+  gr.f_c=0; gr.n=gr.v=gr.uv=0;
+  line="1//1 2//2 3//3\n";
+  cobj_count_faces(line,&gr);
+
+  gr.f_c=0; gr.n=gr.v=gr.uv=0;
+  line="1 2 3 4 5 6\n";
+  cobj_count_faces(line,&gr);
 }
 
 
@@ -139,11 +169,15 @@ int main()
 {
 	GLFWwindow* window;
 	const GLFWvidmode* mode;
+  GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
+  GLfloat mat_shininess[] = { 50.0 };
+  GLfloat light_position[] = { 0.0, 50.0, -100.0, 0.0 };
 
 #ifdef _DEBUG
   _CrtSetDbgFlag ( _CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF );
 #endif
 
+  test();
   loadNextObj(&g_obj);
 	if (!glfwInit())
 		return -1;
@@ -160,10 +194,20 @@ int main()
 	glfwSetFramebufferSizeCallback(window, frame);
 	glfwMakeContextCurrent(window);
   glfwSetKeyCallback(window, keycallback);
-
-  //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    
 	glEnable(GL_POINT_SMOOTH);
-	glEnable(GL_LINE_SMOOTH);
+	glEnable(GL_LINE_SMOOTH);  
+  glClearColor (0.0, 0.0, 0.0, 0.0);
+  glShadeModel (GL_SMOOTH);
+
+  glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
+  glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
+  glLightfv(GL_LIGHT0, GL_POSITION, light_position);
+
+  //glEnable(GL_LIGHTING);
+  glEnable(GL_LIGHT0);
+  glEnable(GL_DEPTH_TEST);
+
 
 	while (!glfwWindowShouldClose(window))
 	{
