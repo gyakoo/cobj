@@ -17,7 +17,7 @@ THIS IS WORK IN PROGRESS, SOME FUNCTIONS AREN'T HEAVILY TESTED FOR BEHAVIOR AND 
 #endif
 
 #ifndef COBJ_INDEXBITS
-#define COBJ_INDEXBITS 16
+#define COBJ_INDEXBITS 32
 #endif
 
 #if COBJ_INDEXBITS==16
@@ -40,10 +40,11 @@ extern "C" {
     cobjUV* uv;
     cobjXYZ* n;
     cobjGr* g;
+    cobjXYZ minext, maxext, center;
     unsigned int xyz_c, uv_c, n_c, g_c;
   }cobj;
 
-  int cobj_count_from_file(FILE* file, cobj* obj);
+  void cobj_count_from_file(FILE* file, cobj* obj);
   int cobj_load_from_filename(const char* filename, cobj* obj);
   void cobj_release(cobj* obj);
   
@@ -59,14 +60,14 @@ extern "C" {
 #endif
 #define COBJ_COUNTPASS_ALL 0
 #define COBJ_COUNTPASS_FACES 1
-
-// counts number of indices per face and face components (only v, v and vt, v and vn, all)
-void cobj_count_ipf(const char* line, cobjGr* g)
-{
 #define COBJ_P_SPACES 0
 #define COBJ_P_V 1
 #define COBJ_P_VT 2
 #define COBJ_P_VN 3
+
+// counts number of indices per face and face components (only v, v and vt, v and vn, all)
+void cobj_count_ipf(const char* line, cobjGr* g)
+{
   int digic=0;
   int state=COBJ_P_SPACES;
   int doneComp=0;
@@ -79,7 +80,11 @@ void cobj_count_ipf(const char* line, cobjGr* g)
     case '\t':
     case ' ' : 
       state = COBJ_P_SPACES; 
-      if (digic) g->n=(itype*)1;
+      if (digic)
+      {
+        if ( !g->v ) g->v=(itype*)1;
+        else         g->n=(itype*)1;
+      }
       doneComp=1;
       break;
     default:
@@ -114,18 +119,19 @@ void cobj_count_ipf(const char* line, cobjGr* g)
   }
 }
 
-int cobj_count_from_file(FILE* file, cobj* obj)
+void cobj_count_from_file(FILE* file, cobj* obj)
 {
   char line[512];
   long groupOffs=0;
   int pass,g=-1;
+  int facefound=0;
 
-  obj->xyz_c = obj->uv_c = obj->n_c = obj->g_c = 0;  
+  obj->xyz_c = obj->uv_c = obj->n_c = obj->g_c = 0;
   for (pass=0;pass<2;++pass)
   {
     while (fgets(line,sizeof(line),file))
     {
-      if ( !*line || *line=='#' || *line=='\r' || *line=='\n' ) continue;
+      if ( !*line || *line=='#' || *line=='\r' || *line=='\n' || (*line=='g' && (*(line+1)=='\r' || *(line+1)=='\n')) ) continue;
       switch (pass)
       {
       case COBJ_COUNTPASS_ALL:
@@ -138,17 +144,23 @@ int cobj_count_from_file(FILE* file, cobj* obj)
             case 't': ++obj->uv_c; break;
             case 'n': ++obj->n_c; break;
             }break;
+          case 'f': facefound=1;
+            if (obj->g_c) break;
           case 'g':
             if ( !groupOffs ) groupOffs = ftell(file)-sizeof(line);
             ++obj->g_c; 
           break;
+
           }
       break;
       case COBJ_COUNTPASS_FACES:
           switch(*line)
           {
           case 'g': ++g; break;
-          case 'f': ++obj->g[g].f_c; 
+          case 'f': 
+            if ( !facefound ) continue;
+            if ( g==-1 ) g=0;
+            ++obj->g[g].f_c; 
             if ( !obj->g[g].ipf ) cobj_count_ipf(line,obj->g+g);
             break;
           }
@@ -159,7 +171,10 @@ int cobj_count_from_file(FILE* file, cobj* obj)
     {
       if ( groupOffs<0 ) groupOffs = 0;
       fseek(file,groupOffs,SEEK_SET);
-      obj->g = (cobjGr*)calloc( obj->g_c, sizeof(cobjGr) );
+      if (!obj->g_c && facefound) 
+        obj->g_c=1;
+      if (obj->g_c) obj->g = (cobjGr*)calloc( obj->g_c, sizeof(cobjGr) );
+      else obj->g=0;
     }
   }
 }
@@ -174,14 +189,79 @@ void cobj_deallocate(void** ptr)
   if (*ptr) free(*ptr);
   *ptr = NULL;
 }
+
+char* cobj_parse_nextind(char* line, itype* i)
+{
+  register char* startptr=line;
+  while ( *line && *line!='/' && *line!=' ' && *line!='\r' && *line!='\n' )
+    ++line;
+  *line=0;
+  if (startptr!=line)
+    *i = (itype)(atoi(startptr)-1);
+  else if ( i )
+    return NULL;  
+  return ++line;
+}
+
+// assumes starts correctly with first index
+void cobj_parse_face(char* line, cobjGr* gr, unsigned int f)
+{
+  unsigned int i,flags=0;
+ 
+  if (gr->v ) { flags |= 1<<0; }
+  if (gr->uv) { flags |= 1<<1; }
+  if (gr->n ) { flags |= 1<<2; }
+  
+  for (i=0;i<gr->ipf;++i)
+  {
+    switch(flags)
+    {
+    case 1:
+      line=cobj_parse_nextind(line,gr->v+f);
+    break;
+    case 3:
+      line=cobj_parse_nextind(line,gr->v+f);
+      line=cobj_parse_nextind(line,gr->uv+f);
+    break;
+    case 5:
+      line=cobj_parse_nextind(line,gr->v+f);
+      line=cobj_parse_nextind(line,NULL);
+      line=cobj_parse_nextind(line,gr->n+f);
+    break;
+    case 7:
+      line=cobj_parse_nextind(line,gr->v+f);
+      line=cobj_parse_nextind(line,gr->uv+f);
+      line=cobj_parse_nextind(line,gr->n+f);
+    break;    
+    }
+
+    ++f;
+    if ((!line || *line=='\r' || *line=='\n') && i < (gr->ipf-1))
+    {
+      if (gr->v)  *(gr->v+f) = *(gr->v+f-1);
+      if (gr->uv) *(gr->uv+f) = *(gr->uv+f-1);
+      if (gr->n)  *(gr->n+f) = *(gr->n+f-1);
+      break;
+    }
+  }
+}
+
 #define cobj_parse2(nam) { fptr=(float*)&obj->nam[nam++]; sscanf(line, "%f %f", fptr, fptr+1); }
 #define cobj_parse3(nam) { fptr=(float*)&obj->nam[nam++]; sscanf(line, "%f %f %f", fptr, fptr+1, fptr+2); }
+#define cobj_checkmin_(o,f) { if (*(fptr+o)<obj->minext.f) obj->minext.f=*(fptr+o); }
+#define cobj_checkmin()  { cobj_checkmin_(0,x); cobj_checkmin_(1,y); cobj_checkmin_(2,z); }
+#define cobj_checkmax_(o,f) { if (*(fptr+o)>obj->maxext.f) obj->maxext.f=*(fptr+o); }
+#define cobj_checkmax()  { cobj_checkmax_(0,x); cobj_checkmax_(1,y); cobj_checkmax_(2,z); }
+#define cobj_checkcom_(o,f) {obj->center.f += *(fptr+o);}
+#define cobj_checkcom() {cobj_checkcom_(0,x); cobj_checkcom_(1,y); cobj_checkcom_(1,z); }
+
 int cobj_load_from_filename(const char* filename, cobj* obj)
 {
   char _line[512];
   char* line;
-  unsigned int xyz=0,uv=0,n=0,g=-1,f=0,i=0,leni;
-  float* fptr;
+  unsigned int xyz=0,uv=0,n=0,f=0,i=0,leni;
+  int g=-1;
+  float* fptr, invc;
   cobjGr* gr;
 
   FILE* file = fopen(filename, "rt");
@@ -190,6 +270,9 @@ int cobj_load_from_filename(const char* filename, cobj* obj)
 
   // preparsing, counting
   cobj_count_from_file(file,obj);
+  obj->minext.x=obj->minext.y=obj->minext.z=FLT_MAX;
+  obj->maxext.x=obj->maxext.y=obj->maxext.z=-FLT_MAX;
+  obj->center.x=obj->center.y=obj->center.z=0.0f;
 
   // memory allocation
   obj->xyz = ( obj->xyz_c ) ? (cobjXYZ*)cobj_allocate( sizeof(cobjXYZ)*obj->xyz_c ) : NULL;
@@ -210,32 +293,44 @@ int cobj_load_from_filename(const char* filename, cobj* obj)
   while (fgets(_line,sizeof(_line),file))
   {
     line = _line;
+    if ( !*line || *line=='#' || *line=='\r' || *line=='\n' || (*line=='g' && (*(line+1)=='\r' || *(line+1)=='\n')) ) continue;
     switch ( *line )
     {
     case 'v':
       line+=2;
       switch ( *(line-1) )
       {
-      case ' ': cobj_parse3(xyz); break;
+      case ' ': cobj_parse3(xyz); cobj_checkmin(); cobj_checkmax(); cobj_checkcom(); break;
       case 't': cobj_parse2(uv);  break;
       case 'n': cobj_parse3(n); break;
       }break;
-    case 'g': ++g;
-      obj->g[g].name = strdup(line+2);
+    case 'g': 
+      ++g;
+      gr = obj->g+g;
+      gr->name = strdup(line+2);
+      f=0;
       break;
     case 'f':
+      if ( g==-1 ) g=0;
+      line+=2;
+      cobj_parse_face(line,gr,f);      
+      f+=gr->ipf;
       break;
     }
   }
 
+  // center of mass
+  invc = 1.0f/obj->xyz_c;
+  obj->center.x *= invc; obj->center.y *= invc; obj->center.z *= invc;
+
   // finishing up
   fclose(file);
-  return 1;
+  return obj->g_c!=0;
 }
 
 void cobj_release(cobj* obj)
 {
-  int i;
+  unsigned int i;
 
   cobj_deallocate((void**)&obj->xyz);
   cobj_deallocate((void**)&obj->uv);
