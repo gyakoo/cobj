@@ -56,9 +56,18 @@ void adjustOrthoBounds(cobj* o)
 
 void drawObj(cobj* o)
 {
+  static float a=0.0f;
   unsigned int i,j,f;
+  float tx=0.0f,ty=0.0f;
   cobjXYZ* xyz;
   cobjGr* gr;
+  
+  a+=0.01f;
+  if ( (o->maxext.x - o->minext.x) > (o->maxext.y - o->minext.y) ) ty = -o->center.y;
+  else tx = -o->center.x;
+
+  glRotatef(a,0,1,0);
+  glTranslatef(tx,ty,0);
 
   for (i=0;i<o->g_c;++i)
   {
@@ -76,7 +85,6 @@ void drawObj(cobj* o)
     glEnd();
   }
 }
-float a=0.0f;
 void frame(GLFWwindow* window, int w, int h)
 {
 	int width = 0, height = 0;
@@ -95,21 +103,35 @@ void frame(GLFWwindow* window, int w, int h)
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 	glDisable(GL_DEPTH_TEST);
-	glColor4ub(255,255,255,255);
+	glColor4ub(240,240,240,255);
 	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
-  a+=0.01f;
-  glTranslatef(0, -g_obj.center.y, 0);
-  glRotatef(a,0,1,0);
+	glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);  
   drawObj(&g_obj);
 
 	glfwSwapBuffers(window);
 }
 
+void loadNextObj(cobj* obj)
+{
+  static const char* names[]={"teapotball.obj", "cessna.obj", "head.obj", "hand.obj", "Shoe2.obj" };
+  static int curObj=0;
+
+  cobj_release(obj);
+  cobj_load_from_filename(names[curObj], obj);
+  adjustOrthoBounds(obj);
+  curObj = (curObj+1)%5;
+}
+
 void keycallback(GLFWwindow* w, int key, int scancode, int action, int mods)
 {
   if ( key==GLFW_KEY_ESCAPE && action == GLFW_PRESS )
+  {
     glfwSetWindowShouldClose(w, GL_TRUE);
+  }
+  if ( key==GLFW_KEY_SPACE && action == GLFW_PRESS )
+  {
+    loadNextObj(&g_obj);
+  }
 }
 
 
@@ -121,10 +143,8 @@ int main()
 #ifdef _DEBUG
   _CrtSetDbgFlag ( _CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF );
 #endif
-  cobj_load_from_filename("shoe2.obj", &g_obj);
 
-  adjustOrthoBounds(&g_obj);
-
+  loadNextObj(&g_obj);
 	if (!glfwInit())
 		return -1;
 
@@ -141,7 +161,7 @@ int main()
 	glfwMakeContextCurrent(window);
   glfwSetKeyCallback(window, keycallback);
 
-  glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+  //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 	glEnable(GL_POINT_SMOOTH);
 	glEnable(GL_LINE_SMOOTH);
 

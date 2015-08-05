@@ -117,6 +117,7 @@ void cobj_count_ipf(const char* line, cobjGr* g)
     }
     ++line;
   }
+  if ( g->ipf > 4 ) g->ipf=4;
 }
 
 void cobj_count_from_file(FILE* file, cobj* obj)
@@ -193,6 +194,8 @@ void cobj_deallocate(void** ptr)
 char* cobj_parse_nextind(char* line, itype* i)
 {
   register char* startptr=line;
+  if ( !line || !*line ) 
+    return NULL;
   while ( *line && *line!='/' && *line!=' ' && *line!='\r' && *line!='\n' )
     ++line;
   *line=0;
@@ -207,12 +210,14 @@ char* cobj_parse_nextind(char* line, itype* i)
 void cobj_parse_face(char* line, cobjGr* gr, unsigned int f)
 {
   unsigned int i,flags=0;
+  unsigned int maxipf=gr->ipf;
  
+  if ( maxipf>4 ) maxipf=4;
   if (gr->v ) { flags |= 1<<0; }
   if (gr->uv) { flags |= 1<<1; }
   if (gr->n ) { flags |= 1<<2; }
   
-  for (i=0;i<gr->ipf;++i)
+  for (i=0;i<maxipf;++i)
   {
     switch(flags)
     {
@@ -235,14 +240,17 @@ void cobj_parse_face(char* line, cobjGr* gr, unsigned int f)
     break;    
     }
 
-    ++f;
-    if ((!line || *line=='\r' || *line=='\n') && i < (gr->ipf-1))
+    if (!line && i <= (gr->ipf-1))
     {
-      if (gr->v)  *(gr->v+f) = *(gr->v+f-1);
-      if (gr->uv) *(gr->uv+f) = *(gr->uv+f-1);
-      if (gr->n)  *(gr->n+f) = *(gr->n+f-1);
+      if ( i<4 )
+      {
+        if (gr->v)  *(gr->v+f) = *(gr->v+f-1);
+        if (gr->uv) *(gr->uv+f) = *(gr->uv+f-1);
+        if (gr->n)  *(gr->n+f) = *(gr->n+f-1);
+      }
       break;
     }
+    ++f;
   }
 }
 
