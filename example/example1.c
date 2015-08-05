@@ -17,9 +17,9 @@
 #define COBJ_IMPLEMENTATION
 #include "cobj.h"
 
-#define SCREENWIDTH 1024
-#define SCREENHEIGHT 768
-#define ENLARGEORTHO 1.20f
+#define SCREENWIDTH 1600
+#define SCREENHEIGHT 1200
+#define ENLARGEORTHO 1.50f
 
 // ortho proj
 double viewbounds[]={-200, 200, -200, 200, -300, 300};
@@ -54,50 +54,62 @@ void adjustOrthoBounds(cobj* o)
   dim=maxd*0.5f;
   viewbounds[4]=-dim; viewbounds[5]=dim;
 }
-
-void drawObj(cobj* o)
+void _drawObj(cobj* o )
 {
-  static float a=0.0f;
-  unsigned int i,j,f,k,c;
-  float tx=0.0f,ty=0.0f;
-  cobjXYZ* xyz;
-  cobjGr* gr;
-  
-  a+=0.01f;
-  if ( (o->maxext.x - o->minext.x) > (o->maxext.y - o->minext.y) ) ty = -o->center.y;
-  else tx = -o->center.x;
+  unsigned int i;
 
-  glRotatef(a,0,1,0);
-  glTranslatef(tx,ty,0);
+  glEnableClientState(GL_VERTEX_ARRAY);  
+  glVertexPointer(3,GL_FLOAT,0,(GLvoid*)o->xyz);
+  if ( o->n )
+  {
+    glEnableClientState(GL_NORMAL_ARRAY);
+    glNormalPointer(GL_FLOAT, 0, (GLvoid*)o->n);
+  }
 
   for (i=0;i<o->g_c;++i)
   {
+    glDrawElements( GL_TRIANGLES, o->g[i].ndx_c, GL_UNSIGNED_INT, (GLvoid*)o->g[i].v );
+  }
+
+  glDisableClientState(GL_NORMAL_ARRAY);
+  glDisableClientState(GL_VERTEX_ARRAY);
+  glFlush();
+}
+
+void drawObj(cobj* o)
+{
+  unsigned int i,j,f,k,c;
+  cobjGr* gr;
+  
+  for (i=0;i<o->g_c;++i)
+  {
     gr=o->g+i;
-    c=gr->f_c/3;
+    c=gr->ndx_c/3;
     glBegin(GL_TRIANGLES);
 
     for (j=0; j<c; ++j)
     {
       for (k=0;k<3;++k)
       {
-        f=gr->v[j*3+k];
-        if ( f>o->xyz_c )  
-          continue;
-        glVertex3fv((const GLfloat*)(o->xyz + f));
         if ( gr->n )
         {
           f=gr->n[j*3+k];
-          glNormal3fv((const GLfloat*)(o->n+f));
+          glNormal3fv((const GLfloat*)(o->n + f));
         }
+
+        f=gr->v[j*3+k];        
+        glVertex3fv((const GLfloat*)(o->xyz + f));
       }
     }
     glEnd();
   }
+  
 }
 void frame(GLFWwindow* window, int w, int h)
 {
 	int width = 0, height = 0;
-  
+  static float a=0.0f;
+
 	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 	glfwGetFramebufferSize(window, &width, &height);
 	glViewport(0, 0, width, height);
@@ -115,20 +127,42 @@ void frame(GLFWwindow* window, int w, int h)
 	glColor4ub(240,240,240,255);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);  
-  drawObj(&g_obj);
+
+
+  a+=3.14159f*0.5f;// * 0.016f;
+  glRotatef(a,0,1,0);
+//  glTranslatef(tx,ty,0);
+
+  if ( glfwGetKey(window,GLFW_KEY_1) == GLFW_PRESS )
+    _drawObj(&g_obj);
+  else
+    drawObj(&g_obj);
 
 	glfwSwapBuffers(window);
 }
 
 void loadNextObj(cobj* obj)
 {
-  static const char* names[]={"teapotball.obj", "cessna.obj", "head.obj", "hand.obj", "Shoe2.obj" };
+#define MAXFILES 5
+  static const char* names[MAXFILES]={"teapotball.obj", "cessna.obj", "head.obj", "hand.obj", "Shoe2.obj" };
   static int curObj=0;
+  unsigned int ntris=0;
+  unsigned int i;
 
   cobj_release(obj);
-  cobj_load_from_filename(names[curObj], obj);
-  adjustOrthoBounds(obj);
-  curObj = (curObj+1)%5;
+  if ( cobj_load_from_filename(names[curObj], obj) )
+  {
+    adjustOrthoBounds(obj);
+    // some info
+    printf( "%s\n", names[curObj]);
+    printf( "%d bytes\n", obj->allocatedSize);
+    printf( "%d groups\n", obj->g_c );
+    for (i=0;i<obj->g_c;++i) ntris += obj->g[i].ndx_c/3;
+    printf( "%d triangles\n", ntris );
+    printf( "%d vertices, %d textured, %d normals\n\n", obj->xyz_c, obj->uv_c, obj->n_c);
+  }
+
+  curObj = (curObj+1)%MAXFILES;
 }
 
 void keycallback(GLFWwindow* w, int key, int scancode, int action, int mods)
@@ -155,11 +189,11 @@ void test()
 
   cobj_count_faces(line,&gr);
 
-  gr.f_c=0; gr.n=gr.v=gr.uv=0;
+  gr.ndx_c=0; gr.n=gr.v=gr.uv=0;
   line="1//1 2//2 3//3\n";
   cobj_count_faces(line,&gr);
 
-  gr.f_c=0; gr.n=gr.v=gr.uv=0;
+  gr.ndx_c=0; gr.n=gr.v=gr.uv=0;
   line="1 2 3 4 5 6\n";
   cobj_count_faces(line,&gr);
 }
@@ -167,11 +201,14 @@ void test()
 
 int main()
 {
-	GLFWwindow* window;
+  char timestr[32];
+  GLFWwindow* window;
 	const GLFWvidmode* mode;
+  double t0,t1,acum=0.0;
+  GLint i=1;
   GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
   GLfloat mat_shininess[] = { 50.0 };
-  GLfloat light_position[] = { 0.0, 50.0, -100.0, 0.0 };
+  GLfloat light_position[] = { 0.0, 10.0, -1.0, 0.0 };
 
 #ifdef _DEBUG
   _CrtSetDbgFlag ( _CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF );
@@ -190,11 +227,11 @@ int main()
 		glfwTerminate();
 		return -1;
 	}
-
 	glfwSetFramebufferSizeCallback(window, frame);
 	glfwMakeContextCurrent(window);
   glfwSetKeyCallback(window, keycallback);
-    
+  glfwSwapInterval(1);
+
 	glEnable(GL_POINT_SMOOTH);
 	glEnable(GL_LINE_SMOOTH);  
   glClearColor (0.0, 0.0, 0.0, 0.0);
@@ -203,17 +240,27 @@ int main()
   glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
   glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
   glLightfv(GL_LIGHT0, GL_POSITION, light_position);
+  glLightModeliv(GL_LIGHT_MODEL_TWO_SIDE, &i ); // two-sided lighting
 
-  //glEnable(GL_LIGHTING);
+  glEnable(GL_LIGHTING);
   glEnable(GL_LIGHT0);
   glEnable(GL_DEPTH_TEST);
+  glEnable(GL_NORMALIZE);
 
-
-	while (!glfwWindowShouldClose(window))
-	{
-		frame(window,0,0);
-		glfwPollEvents();
-	}
+  while (!glfwWindowShouldClose(window))
+  {
+    t0=glfwGetTime();
+    frame(window,0,0);
+    glfwPollEvents();
+    t1=(glfwGetTime() - t0);
+    acum += t1;
+    if ( acum >= 1.0 )
+    {
+      sprintf(timestr,"%.2g", 1.0/t1);
+      glfwSetWindowTitle(window,timestr);
+      acum-=1.0;
+    }
+  }
 
 	glfwTerminate();
   cobj_release(&g_obj);
