@@ -23,6 +23,13 @@ SOFTWARE.
  */
 
 /*
+USAGE:
+  - define COBJ_IMPLEMENTATION in *one* your source (C/C++) file to expand the implementation
+  - define cobj_allocate/cobj_deallocate/cobj_allocatez for custom allocator functions (default: malloc/free/calloc)
+  - define COBJ_INDEXBITS with the bits used for indices. (default: 32)
+*/
+
+/*
 TODO:
   - Material info
   - Allocation functions
@@ -48,6 +55,25 @@ TODO:
 #define COBJ_MAX_IBUFF 48 
 #endif
 
+#define COBJ_FLAG_MTL (1<<0)
+#define COBJ_FLAG_COMPUTENORMALS (1<<1)
+
+// https://en.wikipedia.org/wiki/Wavefront_.obj_file#Material_template_library
+// Illumination modes (cobjMtl->illum) are:
+/*
+0. Color on and Ambient off
+1. Color on and Ambient on
+2. Highlight on
+3. Reflection on and Ray trace on
+4. Transparency: Glass on, Reflection: Ray trace on
+5. Reflection: Fresnel on and Ray trace on
+6. Transparency: Refraction on, Reflection: Fresnel off and Ray trace on
+7. Transparency: Refraction on, Reflection: Fresnel on and Ray trace on
+8. Reflection on and Ray trace off
+9. Transparency: Glass on, Reflection: Ray trace off
+10. Casts shadows onto invisible surfaces
+*/
+
 #if COBJ_INDEXBITS==16
 typedef unsigned short itype;
 #else
@@ -67,7 +93,36 @@ extern "C" {
     char* name;         // group name
     itype ndx_c;        // # of indices
     itype *v, *uv, *n;  // indices of : positions, text coords (optional/nullable), normals (optional/nullable)
-  }cobjGr;  
+  }cobjGr;
+
+  // http://paulbourke.net/dataformats/mtl/
+  typedef struct cobjMtl
+  {
+    char* name;     // mtl name
+    char* map_ka;   // map ambient tex
+    char* map_ks;   // map specular tex
+    char* map_kd;   // map diffuse tex
+    char* map_d;    // map alpha texture
+    char* map_ns;   // map specular hightlight component
+    char* map_bump; // map bump mapping
+    char* map_disp; // map displacement mapping
+    char* map_decal;// map stencil decal
+    cobjXYZ ka;     // ambient color
+    cobjXYZ kd;     // diffuse color
+    cobjXYZ ks;     // specular color
+    float   tr;     // transparancy
+    float   ns;     // specular hightlight 
+    float   sharpness; // sharpness of the reflection
+    float   ni;     // index of refraction
+    char    illum;  // illumination mode (see notes above) 0..10
+  }cobjMtl;
+
+  // Material library
+  typedef struct cobjMatlib
+  {
+    cobjMtl* m;
+    unsigned int m_c;
+  }cobjMatlib;
 
   // Object in memory
   typedef struct cobj
@@ -79,7 +134,9 @@ extern "C" {
     cobjUV* uv;     // texture coordinates vertices or NULL
     cobjXYZ* n;     // normal vertices or NULL
     cobjGr* g;      // groups. if read was ok, it should have at least 1    
+    cobjMatlib matlib;
 
+    int flags;
     unsigned int allocatedSize; // bytes allocated
     unsigned int xyz_c; // # position vertices
     unsigned int uv_c;  // # texture coords vertices
@@ -89,10 +146,14 @@ extern "C" {
 
   // Reads an OBJ (Wavefront) file into memory. 
   // Returns 1 if succeeded, 0 otherwise
-  int cobj_load_from_filename(const char* filename, cobj* obj);
+  int cobj_load_from_filename(const char* filename, cobj* obj, int flags);
+
+  // reads a MTL (wavefront) material library into memory
+  int cobj_load_matlib_from_filename(const char* filename, cobjMatlib* matlib);
 
   // Releases the memory associated to the obj file
-  void cobj_release(cobj* obj);
+  void cobj_release(cobj* obj, int flags);
+  void cobj_release_matlib(cobjMatlib* matlib);
   
 #ifdef __cplusplus
 };
@@ -124,7 +185,19 @@ extern "C" {
 #define cobj_checkcom() {cobj_checkcom_(0,x); cobj_checkcom_(1,y); cobj_checkcom_(1,z); }
 #define cobj_face_addv(f,l) { gr->v[f]=vbuff[l]; if(gr->uv)gr->uv[f]=uvbuff[l]; if(gr->n)gr->n[f]=nbuff[l]; }
 
-void* cobj_allocate(unsigned int size_bytes)
+#ifndef cobj_allocate
+#define cobj_allocate cobj_allocate_cr
+#endif
+
+#ifndef cobj_deallocate
+#define cobj_deallocate cobj_deallocate_cr
+#endif
+
+#ifndef cobj_allocatez
+#define cobj_allocatez cobj_allocatez_cr
+#endif
+
+void* cobj_allocate_cr(unsigned int size_bytes)
 {
   void* ptr= malloc(size_bytes);
 #ifdef _DEBUG
@@ -134,13 +207,13 @@ void* cobj_allocate(unsigned int size_bytes)
   return ptr;
 }
 
-void cobj_deallocate(void** ptr)
+void cobj_deallocate_cr(void* ptr)
 {
-  if (*ptr) free(*ptr);
-  *ptr = NULL;
+  if (ptr) 
+    free(ptr);
 }
 
-void* cobj_allocatez(unsigned int c, unsigned int size)
+void* cobj_allocatez_cr(unsigned int c, unsigned int size)
 { 
   void* ptr = calloc(c,size);
 #ifdef _DEBUG
@@ -218,6 +291,14 @@ void cobj_count_from_file(FILE* file, cobj* obj)
             if ( !groupOffs ) groupOffs = ftell(file)-sizeof(line);
             ++obj->g_c; 
           break;
+          case 'm':
+            if ( !(obj->flags&COBJ_FLAG_MTL) ) break;
+            if ( strncmp(line+1,"tllib",5)==0 )
+            {
+              if ( !obj->matlib.m )
+                cobj_load_matlib_from_filename(line+7,&obj->matlib);
+            }
+            break;
 
           }
       break;
@@ -304,7 +385,7 @@ int cobj_parse_faces(char* line, cobjGr* gr, unsigned int f, itype* vbuff, itype
 
 // load an obj from file
 // it will allocate heap memory for the elements
-int cobj_load_from_filename(const char* filename, cobj* obj)
+int cobj_load_from_filename(const char* filename, cobj* obj, int flags)
 {
   itype vbuf[COBJ_MAX_IBUFF], uvbuff[COBJ_MAX_IBUFF], nbuff[COBJ_MAX_IBUFF];
   char _line[512];
@@ -318,6 +399,7 @@ int cobj_load_from_filename(const char* filename, cobj* obj)
 
   if ( !file ) return 0;
 
+  obj->flags = flags;
   // pre-parsing, counting
   cobj_count_from_file(file,obj);
   obj->minext.x=obj->minext.y=obj->minext.z=FLT_MAX;
@@ -359,6 +441,7 @@ int cobj_load_from_filename(const char* filename, cobj* obj)
       ++g;
       gr = obj->g+g;
       gr->name = strdup(line+2);
+      obj->allocatedSize += strlen(gr->name);
       f=0;
       break;
     case 'f':
@@ -369,7 +452,7 @@ int cobj_load_from_filename(const char* filename, cobj* obj)
     }
   }
 
-  // center of mass
+  // geometric center
   invc = 1.0f/obj->xyz_c;
   obj->center.x *= invc; 
   obj->center.y *= invc; 
@@ -378,27 +461,60 @@ int cobj_load_from_filename(const char* filename, cobj* obj)
   // finishing up
   fclose(file);
 
-  return obj->g_c!=0;
+  return obj->g_c;
+}
+
+int cobj_load_matlib_from_filename(const char* filename, cobjMatlib* matlib)
+{
+  return matlib->m_c;
+}
+
+void cobj_release_matlib(cobjMatlib* matlib)
+{
+  unsigned int i;
+  cobjMtl* m;
+
+  for (i=0;i<matlib->m_c;++i)
+  {
+    m=matlib->m+i;
+    cobj_deallocate(m->name);
+    cobj_deallocate(m->map_ka);
+    cobj_deallocate(m->map_ks);
+    cobj_deallocate(m->map_kd);
+    cobj_deallocate(m->map_d);
+    cobj_deallocate(m->map_ns);
+    cobj_deallocate(m->map_bump);
+    cobj_deallocate(m->map_disp);
+    cobj_deallocate(m->map_decal);
+  }
+  cobj_deallocate(matlib->m);
+  matlib->m = 0;
+  matlib->m_c= 0;
 }
 
 // release allocated memory in the cobj object
-void cobj_release(cobj* obj)
+void cobj_release(cobj* obj, int flags)
 {
   unsigned int i;
 
-  cobj_deallocate((void**)&obj->xyz);
-  cobj_deallocate((void**)&obj->uv);
-  cobj_deallocate((void**)&obj->n);
+  cobj_deallocate(obj->xyz);
+  cobj_deallocate(obj->uv);
+  cobj_deallocate(obj->n);
   for (i=0;i<obj->g_c;++i)
   {
-    cobj_deallocate((void**)&obj->g[i].name);
-    cobj_deallocate((void**)&obj->g[i].v);
-    cobj_deallocate((void**)&obj->g[i].uv);
-    cobj_deallocate((void**)&obj->g[i].n);
+    cobj_deallocate(obj->g[i].name);
+    cobj_deallocate(obj->g[i].v);
+    cobj_deallocate(obj->g[i].uv);
+    cobj_deallocate(obj->g[i].n);
   }
-  cobj_deallocate((void**)&obj->g);
+  cobj_deallocate(obj->g);
+
+  if ( (flags&COBJ_FLAG_MTL)!= 0 )
+    cobj_release_matlib(&obj->matlib);  
+
+  obj->xyz=0; obj->uv=0; obj->n=0; obj->g=0;
   obj->xyz_c = obj->uv_c = obj->n_c = obj->g_c = 0;
-  obj->allocatedSize=0;
+  obj->allocatedSize=0;  
 }
 
 #ifdef _MSC_VER

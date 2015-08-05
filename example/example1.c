@@ -20,6 +20,7 @@
 #define SCREENWIDTH 1600
 #define SCREENHEIGHT 1200
 #define ENLARGEORTHO 1.50f
+#define UNUSED
 
 // ortho proj
 double viewbounds[]={-200, 200, -200, 200, -300, 300};
@@ -110,6 +111,8 @@ void frame(GLFWwindow* window, int w, int h)
 	int width = 0, height = 0;
   static float a=0.0f;
 
+  UNUSED(w); UNUSED(h);
+
 	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 	glfwGetFramebufferSize(window, &width, &height);
 	glViewport(0, 0, width, height);
@@ -143,14 +146,14 @@ void frame(GLFWwindow* window, int w, int h)
 
 void loadNextObj(cobj* obj)
 {
-#define MAXFILES 5
-  static const char* names[MAXFILES]={"teapotball.obj", "cessna.obj", "head.obj", "hand.obj", "Shoe2.obj" };
+#define MAXFILES 6
+  static const char* names[MAXFILES]={"torusbox.obj", "teapotball.obj", "cessna.obj", "head.obj", "hand.obj", "Shoe2.obj" };
   static int curObj=0;
   unsigned int ntris=0;
   unsigned int i;
 
-  cobj_release(obj);
-  if ( cobj_load_from_filename(names[curObj], obj) )
+  cobj_release(obj,COBJ_FLAG_MTL);
+  if ( cobj_load_from_filename(names[curObj], obj, COBJ_FLAG_MTL|COBJ_FLAG_COMPUTENORMALS) )
   {
     adjustOrthoBounds(obj);
     // some info
@@ -167,6 +170,7 @@ void loadNextObj(cobj* obj)
 
 void keycallback(GLFWwindow* w, int key, int scancode, int action, int mods)
 {
+  UNUSED(mods); UNUSED(scancode);
   if ( key==GLFW_KEY_ESCAPE && action == GLFW_PRESS )
   {
     glfwSetWindowShouldClose(w, GL_TRUE);
@@ -208,7 +212,7 @@ int main()
   GLint i=1;
   GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
   GLfloat mat_shininess[] = { 50.0 };
-  GLfloat light_position[] = { 0.0, 10.0, -1.0, 0.0 };
+  GLfloat light_position[] = { -10.0, 10.0, -1.0, 0.0 };
 
 #ifdef _DEBUG
   _CrtSetDbgFlag ( _CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF );
@@ -237,6 +241,7 @@ int main()
   glClearColor (0.0, 0.0, 0.0, 0.0);
   glShadeModel (GL_SMOOTH);
 
+  glLoadIdentity();
   glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
   glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
   glLightfv(GL_LIGHT0, GL_POSITION, light_position);
@@ -256,13 +261,13 @@ int main()
     acum += t1;
     if ( acum >= 1.0 )
     {
-      sprintf(timestr,"%.2g", 1.0/t1);
+      sprintf_s(timestr,sizeof(timestr),"%.2g", 1.0/t1);
       glfwSetWindowTitle(window,timestr);
       acum-=1.0;
     }
   }
 
 	glfwTerminate();
-  cobj_release(&g_obj);
+  cobj_release(&g_obj, COBJ_FLAG_MTL);
 	return 0;
 }
