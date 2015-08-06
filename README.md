@@ -6,7 +6,10 @@ Single-Header fast Alias Wavefront OBJ loader written in C
 # features
 * no dependencies
 * custom memory allocator functions
-* two modes of allocation: exact amount (2 passes reader) and double-the-size array type
+* three modes of allocation: 
+** exact amount (2 passes reader) 
+** double-the-size array type
+** callback (no allocation)
 * material library (optional and shareable), see struct cobjMtl
 * negative indices
 * polygons > 3 vertices
@@ -14,7 +17,7 @@ Single-Header fast Alias Wavefront OBJ loader written in C
 * can read/parse fast and efficiently +100Mb obj files (http://graphics.cs.williams.edu/data/meshes.xml)
 
 # todo
-* make two allocation modes available by flag
+* make three allocation modes available by flag
 * Option to Expand vertices+uv+normals for glDrawElements/glDrawArrays format 
 * Option to compute normals when no presents
 * Binary version serialization. defines to include parsing/binary code.

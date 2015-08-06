@@ -25,24 +25,28 @@ SOFTWARE.
 /*
 USAGE:
   - define COBJ_IMPLEMENTATION in *one* your source (C/C++) file to expand the implementation
-  - define cobj_allocate/cobj_deallocate/cobj_allocatez for custom allocator functions (default: malloc/free/calloc)
+  - define cobj_allocate/cobj_deallocate/cobj_allocatez/cobj_reallocate for custom allocator 
+       functions (default: malloc/free/calloc)
   - define COBJ_INDEXBITS with the bits used for indices. (default: 32)
 */
 
 /*
 TODO:    
-  - Option to Expand vertices+uv+normals for glDrawElements/glDrawArrays format
-  - Option to compute normals when no present
-  - Binary version serialization. defines to include parsing/binary code.
-  - Export to DX/GL .h binary data to embed into data segment
-  - Smoothing groups and other OBJ elements not supported so far
+* make three allocation modes available by flag
+* Option to Expand vertices+uv+normals for glDrawElements/glDrawArrays format 
+* Option to compute normals when no presents
+* Binary version serialization. defines to include parsing/binary code.
+* Export to DX/GL .h binary data to embed into data segment
+* Smoothing groups and other OBJ elements not supported so far
+* Support for half float?
+* Stripize?
 */
 
 #ifndef COBJ_H_
 #define COBJ_H_
 
-#if !defined(cobj_allocate) || !defined(cobj_allocatez) || !defined(cobj_deallocate)
-#include <stdlib.h> // malloc/calloc/free
+#if !defined(cobj_allocate) || !defined(cobj_allocatez) || !defined(cobj_deallocate) || !defined(cobj_reallocate)
+#include <stdlib.h> // malloc/calloc/free/realloc
 #endif
 #include <stdio.h>  // fopen/fclose
 #include <string.h> // strcmp functions
@@ -65,6 +69,7 @@ TODO:
 #define COBJ_FLAG_MATERIALS      (1<<0)
 #define COBJ_FLAG_COMPUTENORMALS (1<<1)
 #define COBJ_FLAG_EXPANDVERTICES (1<<2)
+#define COBJ_FLAG_2PASSALLOC     (1<<3) 
 
 #if COBJ_INDEXBITS==16
 typedef unsigned short itype;
@@ -128,14 +133,14 @@ extern "C" {
     cobjUV* uv;     // texture coordinates vertices or NULL
     cobjXYZ* n;     // normal vertices or NULL
     cobjGr* g;      // groups. if read was ok, it should have at least 1    
-    cobjMatlib matlib;
-
-    int flags;
+    cobjMatlib matlib; // material library
     unsigned int allocatedSize; // bytes allocated
     unsigned int xyz_c; // # position vertices
     unsigned int uv_c;  // # texture coords vertices
     unsigned int n_c;   // # normals vertices
     unsigned int g_c;   // # groups
+    int flags;      // loading flags
+    void* reserved;
   }cobj;
 
   // Reads an OBJ (Wavefront) file into memory. 
@@ -192,12 +197,15 @@ extern "C" {
 #define cobj_allocatez cobj_allocatez_cr
 #endif
 
+#ifndef cobj_reallocate
+#define cobj_reallocate cobj_reallocate_cr
+#endif
+
 void* cobj_allocate_cr(unsigned int size_bytes)
 {
   void* ptr= malloc(size_bytes);
 #ifdef _DEBUG
-  if (!ptr)
-    COBJ_DEBUGBREAK();
+  if (!ptr) COBJ_DEBUGBREAK(); // ran out of memory or fragmented
 #endif
   return ptr;
 }
@@ -212,8 +220,16 @@ void* cobj_allocatez_cr(unsigned int c, unsigned int size)
 { 
   void* ptr = calloc(c,size);
 #ifdef _DEBUG
-  if (!ptr)
-    COBJ_DEBUGBREAK();
+  if (!ptr) COBJ_DEBUGBREAK(); // ran out of memory or fragmented
+#endif
+  return ptr;
+}
+
+void* cobj_reallocate(void* ptr, unsigned int bytes)
+{
+  void* ptr = realloc(ptr,bytes);
+#ifdef _DEBUG
+  if (!ptr) COBJ_DEBUGBREAK(); // ran out of memory or fragmented
 #endif
   return ptr;
 }
@@ -440,30 +456,34 @@ int cobj_load_from_filename(const char* filename, cobj* obj, int flags)
   if ( !file ) return 0;
 
   obj->flags = flags;
-  // pre-parsing, counting
-  cobj_count_from_file(file,obj);
-  obj->minext.x=obj->minext.y=obj->minext.z=COBJ_FLT_MAX;
-  obj->maxext.x=obj->maxext.y=obj->maxext.z=-COBJ_FLT_MAX;
-  obj->center.x=obj->center.y=obj->center.z=0.0f;
-
-  // memory allocation
-  obj->xyz = ( obj->xyz_c ) ? (cobjXYZ*)cobj_allocate( sizeof(cobjXYZ)*obj->xyz_c ) : NULL;
-  obj->uv = (obj->uv_c) ? (cobjUV*)cobj_allocate(sizeof(cobjUV)*obj->uv_c) : NULL;
-  obj->n = (obj->n_c) ? (cobjXYZ*)cobj_allocate(sizeof(cobjXYZ)*obj->n_c) : NULL; 
-  obj->allocatedSize += (obj->n_c+obj->xyz_c)*sizeof(cobjXYZ) + obj->uv_c*sizeof(cobjUV);
-  for (i=0;i<obj->g_c;++i)
+  if ( (obj->flags&COBJ_FLAG_2PASSALLOC)!=0 )
   {
-    gr = obj->g+i;
-    if (!gr->ndx_c ) continue;
-    leni=sizeof(itype)*gr->ndx_c;
-    if (gr->v) { gr->v=(itype*)cobj_allocate(leni); obj->allocatedSize+=leni; }
-    if (gr->uv){ gr->uv=(itype*)cobj_allocate(leni); obj->allocatedSize+=leni; }
-    if (gr->n) { gr->n=(itype*)cobj_allocate(leni); obj->allocatedSize+=leni; }
+    // pre-parsing, counting
+    cobj_count_from_file(file,obj);    
+
+    // memory allocation
+    obj->xyz = ( obj->xyz_c ) ? (cobjXYZ*)cobj_allocate( sizeof(cobjXYZ)*obj->xyz_c ) : NULL;
+    obj->uv = (obj->uv_c) ? (cobjUV*)cobj_allocate(sizeof(cobjUV)*obj->uv_c) : NULL;
+    obj->n = (obj->n_c) ? (cobjXYZ*)cobj_allocate(sizeof(cobjXYZ)*obj->n_c) : NULL; 
+    obj->allocatedSize += (obj->n_c+obj->xyz_c)*sizeof(cobjXYZ) + obj->uv_c*sizeof(cobjUV);
+    for (i=0;i<obj->g_c;++i)
+    {
+      gr = obj->g+i;
+      if (!gr->ndx_c ) continue;
+      leni=sizeof(itype)*gr->ndx_c;
+      if (gr->v) { gr->v=(itype*)cobj_allocate(leni); obj->allocatedSize+=leni; }
+      if (gr->uv){ gr->uv=(itype*)cobj_allocate(leni); obj->allocatedSize+=leni; }
+      if (gr->n) { gr->n=(itype*)cobj_allocate(leni); obj->allocatedSize+=leni; }
+    }
+    // actual parsing
+    fseek(file,0,SEEK_SET);
+    printf( "%.2f seconds (count+alloc)\n", glfwGetTime()-t0);
   }
 
-  // actual parsing
-  fseek(file,0,SEEK_SET);
-  printf( "%.2f seconds (count+alloc)\n", glfwGetTime()-t0);
+  obj->minext.x=obj->minext.y=obj->minext.z=COBJ_FLT_MAX;
+    obj->maxext.x=obj->maxext.y=obj->maxext.z=-COBJ_FLT_MAX;
+    obj->center.x=obj->center.y=obj->center.z=0.0f;
+  
   while (fgets(_line,sizeof(_line),file))
   {
     line = _line;
@@ -611,6 +631,7 @@ int cobj_load_matlib_from_filename(const char* filename, cobjMatlib* matlib)
   file = fopen(filename, "rt");
   if ( !file ) return 0;
 
+  // material lib files aren't usually that large, so do a 2 pass by default
   for (pass=0;pass<2;++pass)
   {
     while (fgets(_line,sizeof(_line),file))
