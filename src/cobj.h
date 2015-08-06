@@ -149,8 +149,6 @@ extern "C" {
 
 #ifdef COBJ_IMPLEMENTATION
 
-int COUNT=0;
-
 #ifdef _MSC_VER
 # pragma warning (disable: 4996 4100 4204)
 # define COBJ_DEBUGBREAK() __debugbreak()
@@ -159,10 +157,6 @@ int COUNT=0;
 #endif
 #define COBJ_COUNTPASS_ALL 0
 #define COBJ_COUNTPASS_FACES 1
-#define COBJ_P_SPACES 0
-#define COBJ_P_V 1
-#define COBJ_P_VT 2
-#define COBJ_P_VN 3
 #define cobj_isdigit(c) (c>='0' && c<='9')
 #define cobj_parse2(nam) { fptr=(float*)&obj->nam[nam++]; sscanf(line, "%f %f", fptr, fptr+1); }
 #define cobj_parse3(nam) { fptr=(float*)&obj->nam[nam++]; sscanf(line, "%f %f %f", fptr, fptr+1, fptr+2); }
@@ -172,7 +166,7 @@ int COUNT=0;
 #define cobj_checkmax()  { cobj_checkmax_(0,x); cobj_checkmax_(1,y); cobj_checkmax_(2,z); }
 #define cobj_checkcom_(o,f) {obj->center.f += *(fptr+o);}
 #define cobj_checkcom() {cobj_checkcom_(0,x); cobj_checkcom_(1,y); cobj_checkcom_(1,z); }
-#define cobj_face_addv(f,l) { gr->v[f]=vbuff[l]; if(gr->uv)gr->uv[f]=uvbuff[l]; if(gr->n)gr->n[f]=nbuff[l]; }
+#define cobj_face_addv(f,l) { gr->v[f]=vbuf[l]; if(gr->uv)gr->uv[f]=uvbuff[l]; if(gr->n)gr->n[f]=nbuff[l]; }
 
 // allocation macros
 #ifndef cobj_allocate
@@ -369,14 +363,14 @@ char* cobj_parse_nextind(char* line, itype* i, unsigned int vc)
 // the passed buffers are for temporary storage. after parsing the indices
 // are triangulated and stored in 'gr'
 // return number of indices
-int cobj_parse_faces(char* line, cobjGr* gr, unsigned int f, unsigned int vc, unsigned int uv, unsigned int _n, itype* vbuff, itype* uvbuff, itype* nbuff)
+int cobj_parse_faces(char* line, cobjGr* gr, unsigned int f, unsigned int vc, unsigned int uv, unsigned int _n, itype* vbuf, itype* uvbuff, itype* nbuff)
 {
   unsigned int i;
   unsigned int n=0;
 
   while ( line && n<COBJ_MAX_IBUFF)
   {
-    line=cobj_parse_nextind(line,vbuff+n,vc);
+    line=cobj_parse_nextind(line,vbuf+n,vc);
     if ( gr->uv )   line= cobj_parse_nextind(line, uvbuff+n,uv);
     else if (gr->n) while (*line=='/') ++line;
 
@@ -389,7 +383,6 @@ int cobj_parse_faces(char* line, cobjGr* gr, unsigned int f, unsigned int vc, un
   }
   if ( n<3 ) return 0;
 
-  COUNT+=n;
   for (i=2;i<n;++i)
   {
     cobj_face_addv(f,0); ++f;
@@ -427,9 +420,11 @@ int cobj_load_from_filename(const char* filename, cobj* obj, int flags)
   unsigned int xyz=0,uv=0,n=0,f=0,i=0,leni;
   int g=-1;
   float* fptr, invc;
-  cobjGr* gr;
-
+  cobjGr* gr=0;
+  double t0;
   FILE* file = fopen(filename, "rt");
+
+  t0=glfwGetTime();
 
   if ( !file ) return 0;
 
@@ -457,6 +452,7 @@ int cobj_load_from_filename(const char* filename, cobj* obj, int flags)
 
   // actual parsing
   fseek(file,0,SEEK_SET);
+  printf( "%.2f seconds (count+alloc)\n", glfwGetTime()-t0);
   while (fgets(_line,sizeof(_line),file))
   {
     line = _line;
@@ -483,7 +479,7 @@ int cobj_load_from_filename(const char* filename, cobj* obj, int flags)
     case 'f':
       if ( g==-1 ) g=0;
       line+=2;
-      f += cobj_parse_faces(line, gr, f, xyz, uv, n, vbuf, uvbuff, nbuff);
+      f += cobj_parse_faces(line, gr, f, xyz, uv, n, vbuf, uvbuff, nbuff);      
       break;
     case 'u': if ( strnicmp(line+1,"semtl",5)==0 ) gr->usemtl = cobj_find_material(line+6,&obj->matlib); break;
     }
@@ -598,7 +594,7 @@ int cobj_load_matlib_from_filename(const char* filename, cobjMatlib* matlib)
   char* line=_line;
   int pass,m=-1;
   FILE* file;
-  cobjMtl* mtl;
+  cobjMtl* mtl=0;
   
   matlib->m_c = 0;
   file = fopen(filename, "rt");
