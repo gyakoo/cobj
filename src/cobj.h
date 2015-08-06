@@ -44,8 +44,7 @@ TODO:
 #ifdef _DEBUG
 #include <intrin.h>
 #endif
-#include <ctype.h>
-
+#include <ctype.h> // tolower
 
 #ifndef COBJ_INDEXBITS      // put this to 16 bits to save memory for indices, just if you're sure the objects to load have <2^16 addressable vertices
 #define COBJ_INDEXBITS 32
@@ -96,6 +95,7 @@ extern "C" {
     cobjXYZ ka;     // ambient color
     cobjXYZ kd;     // diffuse color
     cobjXYZ ks;     // specular color
+    cobjXYZ tf;     // transmission filter
     float   tr;     // transparancy
     float   ns;     // specular hightlight 
     float   sharpness; // sharpness of the reflection
@@ -235,6 +235,11 @@ void cobj_count_faces(char* line, cobjGr* gr)
         }        
         slashfound++;
         break;
+      default:
+        if (cobj_isdigit(*line) && last=='/' && slashfound==1 )
+        {
+          gr->uv=(itype*)1;
+        }
     }
 
     last = *line;
@@ -339,9 +344,10 @@ void cobj_count_from_file(FILE* file, cobj* obj)
 }
 
 // gets the next integer index in the line
-char* cobj_parse_nextind(char* line, itype* i)
+char* cobj_parse_nextind(char* line, itype* i, unsigned int vc)
 {
   register char* startptr=line;
+  register long ndx;
 
   if ( !line || !*line ) 
     return NULL;
@@ -349,7 +355,10 @@ char* cobj_parse_nextind(char* line, itype* i)
     ++line;  
   *line=0;
   if (startptr!=line)
-    *i = (itype)(atoi(startptr)-1);
+  {
+    ndx = atol(startptr);
+    *i = ( ndx < 0 ) ? (ndx+vc) : ndx-1;
+  }
   else if ( i )
     return NULL;
   return ++line;
@@ -360,19 +369,19 @@ char* cobj_parse_nextind(char* line, itype* i)
 // the passed buffers are for temporary storage. after parsing the indices
 // are triangulated and stored in 'gr'
 // return number of indices
-int cobj_parse_faces(char* line, cobjGr* gr, unsigned int f, itype* vbuff, itype* uvbuff, itype* nbuff)
+int cobj_parse_faces(char* line, cobjGr* gr, unsigned int f, unsigned int vc, unsigned int uv, unsigned int _n, itype* vbuff, itype* uvbuff, itype* nbuff)
 {
   unsigned int i;
   unsigned int n=0;
 
   while ( line && n<COBJ_MAX_IBUFF)
   {
-    line=cobj_parse_nextind(line,vbuff+n);
-    if ( gr->uv )   line= cobj_parse_nextind(line, uvbuff+n);
+    line=cobj_parse_nextind(line,vbuff+n,vc);
+    if ( gr->uv )   line= cobj_parse_nextind(line, uvbuff+n,uv);
     else if (gr->n) while (*line=='/') ++line;
 
     if ( gr->n )
-      line = cobj_parse_nextind(line,nbuff+n);
+      line = cobj_parse_nextind(line,nbuff+n,_n);
 
     while (*line==' ' || *line=='\r' || *line=='\n' ) ++line;
     if ( !*line) line=NULL;
@@ -474,7 +483,7 @@ int cobj_load_from_filename(const char* filename, cobj* obj, int flags)
     case 'f':
       if ( g==-1 ) g=0;
       line+=2;
-      f += cobj_parse_faces(line, gr, f, vbuf, uvbuff, nbuff);
+      f += cobj_parse_faces(line, gr, f, xyz, uv, n, vbuf, uvbuff, nbuff);
       break;
     case 'u': if ( strnicmp(line+1,"semtl",5)==0 ) gr->usemtl = cobj_find_material(line+6,&obj->matlib); break;
     }
@@ -506,10 +515,11 @@ int cobj_load_from_filename(const char* filename, cobj* obj, int flags)
 #define COBJ_MT_kd 11
 #define COBJ_MT_ks 12
 #define COBJ_MT_tr 13
-#define COBJ_MT_ns 14
-#define COBJ_MT_sharpness 15
-#define COBJ_MT_ni 16
-#define COBJ_MT_illum 17
+#define COBJ_MT_tf 14
+#define COBJ_MT_ns 15
+#define COBJ_MT_sharpness 16
+#define COBJ_MT_ni 17
+#define COBJ_MT_illum 18
 
 #define cobj_cmptok(t,n) if(strnicmp(l0,#t,n)==0) tok=COBJ_MT_##t
 int cobj_mtl_tokenize(char** line, int* m)
@@ -528,13 +538,14 @@ int cobj_mtl_tokenize(char** line, int* m)
   case 1: // d 
     if (tolower(*l0)=='d') tok=COBJ_MT_tr;
   break;
-  case 2: // ka kd ks tr ns ni 
+  case 2: // ka kd ks tr ns ni tf
          cobj_cmptok(ka,2);
     else cobj_cmptok(kd,2);
     else cobj_cmptok(ks,2);
     else cobj_cmptok(tr,2);
     else cobj_cmptok(ns,2);
     else cobj_cmptok(ni,2);    
+    else cobj_cmptok(tf,2);
   break;
   case 4: // bump disp
     if (strnicmp(l0,"bump",4)==0) tok=COBJ_MT_map_bump;
@@ -620,6 +631,7 @@ int cobj_load_matlib_from_filename(const char* filename, cobjMatlib* matlib)
             COBJ_TOKEN_STR(map_bump); 
             COBJ_TOKEN_STR(map_disp);   
             COBJ_TOKEN_STR(map_decal);
+            COBJ_TOKEN_3FL(tf);
             COBJ_TOKEN_3FL(ka);       
             COBJ_TOKEN_3FL(kd);         
             COBJ_TOKEN_3FL(ks);

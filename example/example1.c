@@ -146,18 +146,25 @@ void frame(GLFWwindow* window, int w, int h)
 
 void loadNextObj(cobj* obj)
 {
-#define MAXFILES 6
-  static const char* names[MAXFILES]={"torusbox.obj", "teapotball.obj", "cessna.obj", "head.obj", "hand.obj", "Shoe2.obj" };
+#define MAXFILES 9
+  static const char* names[MAXFILES]={
+    "dragon.obj", "buddha.obj", "sponza/sponza.obj", 
+    "torusbox.obj", "teapotball.obj", "cessna.obj", 
+    "head.obj", "hand.obj", "Shoe2.obj" };
   static int curObj=0;
   unsigned int ntris=0;
   unsigned int i;
+  double t0;
 
   cobj_release(obj,COBJ_FLAG_MATERIALS);
+  t0=glfwGetTime();
   if ( cobj_load_from_filename(names[curObj], obj, COBJ_FLAG_MATERIALS|COBJ_FLAG_COMPUTENORMALS) )
   {
     adjustOrthoBounds(obj);
     // some info
     printf( "%s\n", names[curObj]);
+    t0=glfwGetTime()-t0;
+    printf( "%.3f seconds\n", t0);
     printf( "%d bytes\n", obj->allocatedSize);
     printf( "%d groups\n", obj->g_c );
     for (i=0;i<obj->g_c;++i) ntris += obj->g[i].ndx_c/3;
@@ -208,10 +215,10 @@ int main()
 #ifdef _DEBUG
   _CrtSetDbgFlag ( _CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF );
 #endif
+  if (!glfwInit())
+		return -1;
 
   loadNextObj(&g_obj);
-	if (!glfwInit())
-		return -1;
 
 	mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
   window = glfwCreateWindow(SCREENWIDTH, SCREENHEIGHT, "cobj example", NULL, NULL);
