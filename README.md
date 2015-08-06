@@ -1,13 +1,12 @@
 # cobj
 Single-Header fast Alias Wavefront OBJ loader written in C
 
-# support
+# features
 * custom memory allocator functions
 * material library (optional and shareable), see struct cobjMtl
 * negative indices
 * polygons > 3 vertices
 * 16/32 bits for indices
-
 
 # todo
 * Option to Expand vertices+uv+normals for glDrawElements/glDrawArrays format 
