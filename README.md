@@ -1,5 +1,6 @@
 # cobj
-Single-Header fast Alias Wavefront OBJ loader written in C
+Single-Header fast Alias Wavefront OBJ loader written in C 
+<a href="src/cobj.h">cobj.h</a> 
 
 # features
 * custom memory allocator functions
