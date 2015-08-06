@@ -161,8 +161,16 @@ void loadNextObj(cobj* obj)
     printf( "%d bytes\n", obj->allocatedSize);
     printf( "%d groups\n", obj->g_c );
     for (i=0;i<obj->g_c;++i) ntris += obj->g[i].ndx_c/3;
-    printf( "%d triangles\n", ntris );
-    printf( "%d vertices, %d textured, %d normals\n\n", obj->xyz_c, obj->uv_c, obj->n_c);
+    printf( "\t%d triangles\n", ntris );
+    printf( "\t%d vertices, %d textured, %d normals\n", obj->xyz_c, obj->uv_c, obj->n_c);
+    if ( obj->matlib.m_c )
+    {
+      printf( "%d materials\n", obj->matlib.m_c );
+      for (i=0;i<obj->matlib.m_c;++i)
+        if ( obj->matlib.m[i].name )
+          printf( "\t%s\n", obj->matlib.m[i].name );
+    }
+    printf("\n");
   }
 
   curObj = (curObj+1)%MAXFILES;

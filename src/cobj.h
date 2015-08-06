@@ -46,6 +46,8 @@ TODO:
 #ifdef _DEBUG
 #include <intrin.h>
 #endif
+#include <ctype.h>
+
 
 #ifndef COBJ_INDEXBITS      // put this to 16 bits to save memory for indices, just if you're sure the objects to load have <2^16 addressable vertices
 #define COBJ_INDEXBITS 32
@@ -93,6 +95,7 @@ extern "C" {
     char* name;         // group name
     itype ndx_c;        // # of indices
     itype *v, *uv, *n;  // indices of : positions, text coords (optional/nullable), normals (optional/nullable)
+    int   usemtl;       // index in materiallib for the material (-1 if not)
   }cobjGr;
 
   // http://paulbourke.net/dataformats/mtl/
@@ -257,6 +260,19 @@ void cobj_count_faces(char* line, cobjGr* gr)
     gr->ndx_c += (n-2)*3; // triangulate
 }
 
+void cobj_remove_br(char* str)
+{
+  while ( *str && *str!='\n' && *str!='\r') ++str;
+  *str=0;
+}
+
+int cobj_can_skipline(char* line)
+{
+  if ( !*line || *line=='#' || *line=='\r' || *line=='\n' || (*line=='g' && (*(line+1)=='\r' || *(line+1)=='\n')) )
+    return 1;
+  return 0;
+}
+
 // count total number of elements in the file
 // used as pre step before allocating
 void cobj_count_from_file(FILE* file, cobj* obj)
@@ -272,7 +288,7 @@ void cobj_count_from_file(FILE* file, cobj* obj)
   {
     while (fgets(line,sizeof(line),file))
     {
-      if ( !*line || *line=='#' || *line=='\r' || *line=='\n' || (*line=='g' && (*(line+1)=='\r' || *(line+1)=='\n')) ) continue;
+      if (cobj_can_skipline(line)) continue;
       switch (pass)
       {
       case COBJ_COUNTPASS_ALL:
@@ -296,7 +312,11 @@ void cobj_count_from_file(FILE* file, cobj* obj)
             if ( strncmp(line+1,"tllib",5)==0 )
             {
               if ( !obj->matlib.m )
+              {
+                cobj_remove_br(line+7);
                 cobj_load_matlib_from_filename(line+7,&obj->matlib);
+                obj->allocatedSize += sizeof(cobjMtl)*obj->matlib.m_c;
+              }
             }
             break;
 
@@ -323,7 +343,7 @@ void cobj_count_from_file(FILE* file, cobj* obj)
         obj->g_c=1;
       if (obj->g_c)
       {
-        obj->g = (cobjGr*)cobj_allocatez( obj->g_c, sizeof(cobjGr) );
+        obj->g = (cobjGr*)cobj_allocatez( obj->g_c, sizeof(cobjGr) );        
         obj->allocatedSize += obj->g_c*sizeof(cobjGr);
       }
       else obj->g=0;
@@ -383,6 +403,24 @@ int cobj_parse_faces(char* line, cobjGr* gr, unsigned int f, itype* vbuff, itype
   return (n-2)*3;
 }
 
+int cobj_find_material(char* str, cobjMatlib* matlib)
+{
+  int i;
+  cobjMtl* m;
+
+  while (*str==' '||*str=='\t')++str;
+  cobj_remove_br(str);
+
+  for (i=0;i<matlib->m_c;++i)
+  {
+    m=matlib->m+i;
+    if ( !m->name ) continue;
+    if ( strcmp(str,m->name)==0 )
+      return i;
+  }
+  return -1;
+}
+
 // load an obj from file
 // it will allocate heap memory for the elements
 int cobj_load_from_filename(const char* filename, cobj* obj, int flags)
@@ -426,7 +464,7 @@ int cobj_load_from_filename(const char* filename, cobj* obj, int flags)
   while (fgets(_line,sizeof(_line),file))
   {
     line = _line;
-    if ( !*line || *line=='#' || *line=='\r' || *line=='\n' || (*line=='g' && (*(line+1)=='\r' || *(line+1)=='\n')) ) continue;
+    if (cobj_can_skipline(line)) continue;
     switch ( *line )
     {
     case 'v':
@@ -440,6 +478,8 @@ int cobj_load_from_filename(const char* filename, cobj* obj, int flags)
     case 'g': 
       ++g;
       gr = obj->g+g;
+      gr->usemtl=-1;
+      cobj_remove_br(line+2);
       gr->name = strdup(line+2);
       obj->allocatedSize += strlen(gr->name);
       f=0;
@@ -449,6 +489,7 @@ int cobj_load_from_filename(const char* filename, cobj* obj, int flags)
       line+=2;
       f += cobj_parse_faces(line, gr, f, vbuf, uvbuff, nbuff);
       break;
+    case 'u': if ( strnicmp(line+1,"semtl",5)==0 ) gr->usemtl = cobj_find_material(line+6,&obj->matlib); break;
     }
   }
 
@@ -464,8 +505,155 @@ int cobj_load_from_filename(const char* filename, cobj* obj, int flags)
   return obj->g_c;
 }
 
+#define COBJ_MT_UNKNOWN 0
+#define COBJ_MT_name 1
+#define COBJ_MT_map_ka 2
+#define COBJ_MT_map_ks 3
+#define COBJ_MT_map_kd 4
+#define COBJ_MT_map_d 5
+#define COBJ_MT_map_ns 6
+#define COBJ_MT_map_bump 7
+#define COBJ_MT_map_disp 8
+#define COBJ_MT_map_decal 9
+#define COBJ_MT_ka 10
+#define COBJ_MT_kd 11
+#define COBJ_MT_ks 12
+#define COBJ_MT_tr 13
+#define COBJ_MT_ns 14
+#define COBJ_MT_sharpness 15
+#define COBJ_MT_ni 16
+#define COBJ_MT_illum 17
+
+#define cobj_cmptok(t,n) if(strnicmp(l0,#t,n)==0) tok=COBJ_MT_##t
+int cobj_mtl_tokenize(char** line, int* m)
+{
+  int tok=COBJ_MT_UNKNOWN;
+  char *l0=*line, *l1=*line;
+  int tl;
+  // extract first word
+  while (*l1!=' ' && *l1!='\t') ++l1;
+  *l1=0; tl=l1-l0; ++l1;
+  while (*l1==' ' || *l1=='\t') ++l1;
+  *line=l1;
+
+  switch(tl)
+  {
+  case 1: // d 
+    if (tolower(*l0)=='d') tok=COBJ_MT_tr;
+  break;
+  case 2: // ka kd ks tr ns ni 
+         cobj_cmptok(ka,2);
+    else cobj_cmptok(kd,2);
+    else cobj_cmptok(ks,2);
+    else cobj_cmptok(tr,2);
+    else cobj_cmptok(ns,2);
+    else cobj_cmptok(ni,2);    
+  break;
+  case 4: // bump disp
+    if (strnicmp(l0,"bump",4)==0) tok=COBJ_MT_map_bump;
+    else if (strnicmp(l0,"disp",4)==0) tok=COBJ_MT_map_disp;
+  break;
+  case 5: // illum map_d decal
+         cobj_cmptok(illum,5);
+    else cobj_cmptok(map_d,5);
+    else if (strnicmp(l0,"decal",5)==0) tok=COBJ_MT_map_decal;
+  break;
+  case 6: // map_ka map_ks map_kd newmtl
+    if (strnicmp(l0,"newmtl",6)==0){++*m; tok=COBJ_MT_name;}
+    else cobj_cmptok(map_ka,6);
+    else cobj_cmptok(map_ks,6);
+    else cobj_cmptok(map_kd,6);
+  break;
+  case 8: // map_bump
+    cobj_cmptok(map_bump,8);
+  break;
+  case 9: // sharpness
+    cobj_cmptok(sharpness,9);
+    break;
+  }
+  return tok;
+}
+
+#define COBJ_EMITPARSETUPLECODE(typ,f1,f2,N) \
+void cobj_parsefor##N(char** line, int n, void* data)\
+{\
+  typ* ptr=(typ*)data;\
+  char *l=*line,*b=*line;\
+  while (*l && *l!='\n' && *l!='\r') ++l;\
+  *l=0; *line=l+1;\
+  switch(n)\
+  {\
+  case 1: sscanf(b,f1,ptr); break;\
+  case 3: sscanf(b,f2,ptr,ptr+1,ptr+2); break;\
+  }\
+}
+COBJ_EMITPARSETUPLECODE(float,"%f","%f %f %f",fl);
+COBJ_EMITPARSETUPLECODE(int,"%d","%d %d %d",in);
+#define COBJ_TOKEN_STR(n) case COBJ_MT_##n: { cobj_remove_br(line); mtl->n=strdup(line);} break
+#define COBJ_TOKEN_3FL(n) case COBJ_MT_##n: cobj_parseforfl(&line, 3, &mtl->n); break
+#define COBJ_TOKEN_1FL(n) case COBJ_MT_##n: cobj_parseforfl(&line, 1, &mtl->n); break
+#define COBJ_TOKEN_1IN(n) case COBJ_MT_##n: cobj_parseforin(&line, 1, &mtl->n); break
 int cobj_load_matlib_from_filename(const char* filename, cobjMatlib* matlib)
 {
+  char _line[512];
+  char* line=_line;
+  int pass,m=-1;
+  FILE* file;
+  cobjMtl* mtl;
+  
+  matlib->m_c = 0;
+  file = fopen(filename, "rt");
+  if ( !file ) return 0;
+
+  for (pass=0;pass<2;++pass)
+  {
+    while (fgets(_line,sizeof(_line),file))
+    {
+      line=_line;
+      if (cobj_can_skipline(line)) continue;
+      while (!isalpha(*line)) ++line;      
+      switch ( pass )
+      {
+        // First pass is to count no. materials
+        case 0:
+          switch (*line){ case 'n': if ( strnicmp(line+1,"ewmtl",5)==0 ) ++matlib->m_c; break; }
+        break;
+
+        // Second pass is to actual parse
+        case 1:
+          switch(cobj_mtl_tokenize(&line,&m))
+          {
+            case COBJ_MT_name: { mtl=matlib->m+m; cobj_remove_br(line); mtl->name=strdup(line); } break;
+            COBJ_TOKEN_STR(map_ka);     
+            COBJ_TOKEN_STR(map_ks);   
+            COBJ_TOKEN_STR(map_kd);   
+            COBJ_TOKEN_STR(map_d);      
+            COBJ_TOKEN_STR(map_ns);
+            COBJ_TOKEN_STR(map_bump); 
+            COBJ_TOKEN_STR(map_disp);   
+            COBJ_TOKEN_STR(map_decal);
+            COBJ_TOKEN_3FL(ka);       
+            COBJ_TOKEN_3FL(kd);         
+            COBJ_TOKEN_3FL(ks);
+            COBJ_TOKEN_1FL(tr);       
+            COBJ_TOKEN_1FL(ns);         
+            COBJ_TOKEN_1FL(sharpness);
+            COBJ_TOKEN_1FL(ni);       
+            COBJ_TOKEN_1IN(illum);
+          }
+        break;
+      }
+    }
+    
+    if (pass==0)
+    {
+      if ( !matlib->m_c ) break;
+      fseek(file,0,SEEK_SET);
+      matlib->m=(cobjMtl*)cobj_allocatez(matlib->m_c, sizeof(cobjMtl));
+    }
+  }
+
+  fclose(file);  
   return matlib->m_c;
 }
 
