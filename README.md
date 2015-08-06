@@ -14,12 +14,14 @@ Single-Header fast Alias Wavefront OBJ loader written in C
 * can read/parse fast and efficiently +100Mb obj files (http://graphics.cs.williams.edu/data/meshes.xml)
 
 # todo
-
+* make two allocation modes available by flag
 * Option to Expand vertices+uv+normals for glDrawElements/glDrawArrays format 
 * Option to compute normals when no presents
 * Binary version serialization. defines to include parsing/binary code.
 * Export to DX/GL .h binary data to embed into data segment
 * Smoothing groups and other OBJ elements not supported so far
+* Support for half float?
+* Stripize?
 
 # some screenshots
 <img src="data/buddha.png" width="50%" />
