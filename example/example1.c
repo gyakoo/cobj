@@ -142,11 +142,11 @@ void frame(GLFWwindow* window, int w, int h)
 
 void loadNextObj(cobj* obj)
 {
-#define MAXFILES 9
-  static const char* names[MAXFILES]={
+#define MAXFILES 10
+  static const char* names[MAXFILES]={    
     "dragon.obj", "buddha.obj", "sponza/sponza.obj", 
     "torusbox.obj", "teapotball.obj", "cessna.obj", 
-    "head.obj", "hand.obj", "Shoe2.obj" };
+    "head.obj", "hand.obj", "Shoe2.obj","rungholt/rungholt.obj" };
   static int curObj=0;
   unsigned int ntris=0;
   unsigned int i;
@@ -154,7 +154,7 @@ void loadNextObj(cobj* obj)
 
   cobj_release(obj,COBJ_FLAG_MATERIALS);
   t0=glfwGetTime();
-  if ( cobj_load_from_filename(names[curObj], obj, COBJ_FLAG_MATERIALS|COBJ_FLAG_COMPUTENORMALS) )
+  if ( cobj_load_from_filename(names[curObj], obj, COBJ_FLAG_MATERIALS|COBJ_FLAG_2PASSALLOC|COBJ_FLAG_COMPUTENORMALS) )
   {
     adjustOrthoBounds(obj);
     // some info
@@ -168,12 +168,12 @@ void loadNextObj(cobj* obj)
     printf( "\t%d vertices, %d textured, %d normals\n", obj->xyz_c, obj->uv_c, obj->n_c);
     if ( obj->matlib.m_c )
     {
-      printf( "%d materials\n", obj->matlib.m_c );
+      printf( "%d materials\n\t", obj->matlib.m_c );
       for (i=0;i<obj->matlib.m_c;++i)
         if ( obj->matlib.m[i].name )
-          printf( "\t%s\n", obj->matlib.m[i].name );
+          printf( "%s, ", obj->matlib.m[i].name );
     }
-    printf("\n");
+    printf("\n\n");
   }
 
   curObj = (curObj+1)%MAXFILES;

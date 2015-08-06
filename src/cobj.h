@@ -227,11 +227,11 @@ void* cobj_allocatez_cr(unsigned int c, unsigned int size)
 
 void* cobj_reallocate(void* ptr, unsigned int bytes)
 {
-  void* ptr = realloc(ptr,bytes);
+  void* newptr = realloc(ptr,bytes);
 #ifdef _DEBUG
-  if (!ptr) COBJ_DEBUGBREAK(); // ran out of memory or fragmented
+  if (!newptr) COBJ_DEBUGBREAK(); // ran out of memory or fragmented
 #endif
-  return ptr;
+  return newptr;
 }
 
 // count number of faces in the line
