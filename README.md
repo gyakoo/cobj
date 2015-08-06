@@ -30,6 +30,7 @@ Single-header OBJ (Alias Wavefront) loader written in C
 Models are from http://graphics.cs.williams.edu/data/meshes.xml<br/>
 ### buddha.obj
 File size: 90Mb <br/>
+Mem footprint: 39Mb <br/>
 Triangles: 1,087,474 <br/>
 Vertices: 549,333 <br/>
 Load time: 2.3s <br/>
@@ -37,7 +38,8 @@ Load time: 2.3s <br/>
 
 ### dragon.obj
 File size: 70Mb <br/>
-Triangles: 871,306<br/> 
+Mem footprint: 31Mb <br/>
+Triangles: 871,306<br/>
 Vertices: 438,929 <br/>
 Load time: 1.9s <br/>
 <img src="data/dragon.png" width="50%" /> 
