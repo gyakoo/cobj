@@ -7,9 +7,9 @@ Single-Header fast Alias Wavefront OBJ loader written in C
 * no dependencies
 * custom memory allocator functions
 * three modes of allocation: 
-** exact amount (2 passes reader) 
-** double-the-size array type
-** callback (no allocation)
+ * exact amount (2 passes reader) 
+ * double-the-size array type
+ * callback (no allocation)
 * material library (optional and shareable), see struct cobjMtl
 * negative indices
 * polygons > 3 vertices
