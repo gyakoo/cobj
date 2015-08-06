@@ -14,7 +14,7 @@ Single-header OBJ (Alias Wavefront) loader written in C
 * negative indices
 * polygons > 3 vertices
 * 16/32 bits for indices
-* can read/parse fast and efficiently +100Mb obj files (http://graphics.cs.williams.edu/data/meshes.xml)
+* can read/parse fast and efficiently +100Mb obj files
 
 # todo
 * make three allocation modes available by flag
@@ -27,6 +27,7 @@ Single-header OBJ (Alias Wavefront) loader written in C
 * Stripize?
 
 # some screenshots
+Models are from http://graphics.cs.williams.edu/data/meshes.xml<br/>
 ### buddha.obj
 File size: 90Mb <br/>
 Triangles: 1,087,474 <br/>
