@@ -1,5 +1,5 @@
-//
-//
+
+
 
 #ifdef _DEBUG
 #define _CRTDBG_MAP_ALLOC
@@ -8,9 +8,6 @@
 #endif
 
 #include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <float.h>
 #include <GLFW/glfw3.h>
 #pragma comment(lib, "glfw3.lib")
 
@@ -22,7 +19,7 @@
 #define ENLARGEORTHO 1.50f
 #define UNUSED
 
-// ortho proj
+//ortho proj
 double viewbounds[]={-200, 200, -200, 200, -300, 300};
 cobj g_obj={0};
 int g_wf=0;
@@ -134,7 +131,6 @@ void frame(GLFWwindow* window, int w, int h)
 
   a+=3.14159f*0.5f;// * 0.016f;
   glRotatef(a,0,1,0);
-//  glTranslatef(tx,ty,0);
 
   if ( glfwGetKey(window,GLFW_KEY_1) == GLFW_PRESS )
     _drawObj(&g_obj);

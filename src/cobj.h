@@ -41,10 +41,18 @@ TODO:
 #ifndef COBJ_H_
 #define COBJ_H_
 
-#ifdef _DEBUG
-#include <intrin.h>
+#if !defined(cobj_allocate) || !defined(cobj_allocatez) || !defined(cobj_deallocate)
+#include <stdlib.h> // malloc/calloc/free
 #endif
-#include <ctype.h> // tolower
+#include <stdio.h>  // fopen/fclose
+#include <string.h> // strcmp functions
+#ifdef _DEBUG
+# ifdef _MSC_VER
+# include <intrin.h>
+# endif
+#else
+# include <signal.h>
+#endif
 
 #ifndef COBJ_INDEXBITS      // put this to 16 bits to save memory for indices, just if you're sure the objects to load have <2^16 addressable vertices
 #define COBJ_INDEXBITS 32
@@ -157,7 +165,10 @@ extern "C" {
 #endif
 #define COBJ_COUNTPASS_ALL 0
 #define COBJ_COUNTPASS_FACES 1
+#define COBJ_FLT_MAX 3.402823466e+38F
 #define cobj_isdigit(c) (c>='0' && c<='9')
+#define cobj_tolowerA(c) (((c)>='A' && (c)<='Z')?((c)+'a'-'A'):(c))
+#define cobj_isalphaA(c) ( (c)>='A' && (c)<='Z' || (c)>='a' && (c)<='z' )
 #define cobj_parse2(nam) { fptr=(float*)&obj->nam[nam++]; sscanf(line, "%f %f", fptr, fptr+1); }
 #define cobj_parse3(nam) { fptr=(float*)&obj->nam[nam++]; sscanf(line, "%f %f %f", fptr, fptr+1, fptr+2); }
 #define cobj_checkmin_(o,f) { if (*(fptr+o)<obj->minext.f) obj->minext.f=*(fptr+o); }
@@ -431,8 +442,8 @@ int cobj_load_from_filename(const char* filename, cobj* obj, int flags)
   obj->flags = flags;
   // pre-parsing, counting
   cobj_count_from_file(file,obj);
-  obj->minext.x=obj->minext.y=obj->minext.z=FLT_MAX;
-  obj->maxext.x=obj->maxext.y=obj->maxext.z=-FLT_MAX;
+  obj->minext.x=obj->minext.y=obj->minext.z=COBJ_FLT_MAX;
+  obj->maxext.x=obj->maxext.y=obj->maxext.z=-COBJ_FLT_MAX;
   obj->center.x=obj->center.y=obj->center.z=0.0f;
 
   // memory allocation
@@ -532,7 +543,7 @@ int cobj_mtl_tokenize(char** line, int* m)
   switch(tl)
   {
   case 1: // d 
-    if (tolower(*l0)=='d') tok=COBJ_MT_tr;
+    if (cobj_tolowerA(*l0)=='d') tok=COBJ_MT_tr;
   break;
   case 2: // ka kd ks tr ns ni tf
          cobj_cmptok(ka,2);
@@ -606,7 +617,7 @@ int cobj_load_matlib_from_filename(const char* filename, cobjMatlib* matlib)
     {
       line=_line;
       if (cobj_can_skipline(line)) continue;
-      while (!isalpha(*line)) ++line;      
+      while (!cobj_isalphaA(*line)) ++line;      
       switch ( pass )
       {
         // First pass is to count no. materials
