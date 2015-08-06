@@ -30,9 +30,7 @@ USAGE:
 */
 
 /*
-TODO:
-  - Material info
-  - Allocation functions
+TODO:    
   - Option to Expand vertices+uv+normals for glDrawElements/glDrawArrays format
   - Option to compute normals when no present
   - Binary version serialization. defines to include parsing/binary code.
@@ -57,24 +55,9 @@ TODO:
 #define COBJ_MAX_IBUFF 48 
 #endif
 
-#define COBJ_FLAG_MTL (1<<0)
+#define COBJ_FLAG_MATERIALS      (1<<0)
 #define COBJ_FLAG_COMPUTENORMALS (1<<1)
-
-// https://en.wikipedia.org/wiki/Wavefront_.obj_file#Material_template_library
-// Illumination modes (cobjMtl->illum) are:
-/*
-0. Color on and Ambient off
-1. Color on and Ambient on
-2. Highlight on
-3. Reflection on and Ray trace on
-4. Transparency: Glass on, Reflection: Ray trace on
-5. Reflection: Fresnel on and Ray trace on
-6. Transparency: Refraction on, Reflection: Fresnel off and Ray trace on
-7. Transparency: Refraction on, Reflection: Fresnel on and Ray trace on
-8. Reflection on and Ray trace off
-9. Transparency: Glass on, Reflection: Ray trace off
-10. Casts shadows onto invisible surfaces
-*/
+#define COBJ_FLAG_EXPANDVERTICES (1<<2)
 
 #if COBJ_INDEXBITS==16
 typedef unsigned short itype;
@@ -117,7 +100,7 @@ extern "C" {
     float   ns;     // specular hightlight 
     float   sharpness; // sharpness of the reflection
     float   ni;     // index of refraction
-    char    illum;  // illumination mode (see notes above) 0..10
+    char    illum;  // illumination mode (see link) 0..10 
   }cobjMtl;
 
   // Material library
@@ -165,6 +148,9 @@ extern "C" {
 #endif // COBJ
 
 #ifdef COBJ_IMPLEMENTATION
+
+int COUNT=0;
+
 #ifdef _MSC_VER
 # pragma warning (disable: 4996 4100 4204)
 # define COBJ_DEBUGBREAK() __debugbreak()
@@ -188,6 +174,7 @@ extern "C" {
 #define cobj_checkcom() {cobj_checkcom_(0,x); cobj_checkcom_(1,y); cobj_checkcom_(1,z); }
 #define cobj_face_addv(f,l) { gr->v[f]=vbuff[l]; if(gr->uv)gr->uv[f]=uvbuff[l]; if(gr->n)gr->n[f]=nbuff[l]; }
 
+// allocation macros
 #ifndef cobj_allocate
 #define cobj_allocate cobj_allocate_cr
 #endif
@@ -308,7 +295,7 @@ void cobj_count_from_file(FILE* file, cobj* obj)
             ++obj->g_c; 
           break;
           case 'm':
-            if ( !(obj->flags&COBJ_FLAG_MTL) ) break;
+            if ( !(obj->flags&COBJ_FLAG_MATERIALS) ) break;
             if ( strncmp(line+1,"tllib",5)==0 )
             {
               if ( !obj->matlib.m )
@@ -393,10 +380,10 @@ int cobj_parse_faces(char* line, cobjGr* gr, unsigned int f, itype* vbuff, itype
   }
   if ( n<3 ) return 0;
 
+  COUNT+=n;
   for (i=2;i<n;++i)
   {
-    { gr->v[f]=vbuff[0]; if(gr->uv)gr->uv[f]=uvbuff[0]; if(gr->n)gr->n[f]=nbuff[0]; }
-    /*cobj_face_addv(f,0);*/ ++f;
+    cobj_face_addv(f,0); ++f;
     cobj_face_addv(f,i-1); ++f;
     cobj_face_addv(f,i); ++f;    
   }
@@ -405,7 +392,7 @@ int cobj_parse_faces(char* line, cobjGr* gr, unsigned int f, itype* vbuff, itype
 
 int cobj_find_material(char* str, cobjMatlib* matlib)
 {
-  int i;
+  unsigned int i;
   cobjMtl* m;
 
   while (*str==' '||*str=='\t')++str;
@@ -574,8 +561,8 @@ int cobj_mtl_tokenize(char** line, int* m)
   return tok;
 }
 
-#define COBJ_EMITPARSETUPLECODE(typ,f1,f2,N) \
-void cobj_parsefor##N(char** line, int n, void* data)\
+#define COBJ_EMITPARSETUPLECODE(typ,f) \
+void cobj_parse##typ(char** line, int n, void* data)\
 {\
   typ* ptr=(typ*)data;\
   char *l=*line,*b=*line;\
@@ -583,16 +570,17 @@ void cobj_parsefor##N(char** line, int n, void* data)\
   *l=0; *line=l+1;\
   switch(n)\
   {\
-  case 1: sscanf(b,f1,ptr); break;\
-  case 3: sscanf(b,f2,ptr,ptr+1,ptr+2); break;\
+  case 1: sscanf(b,f,ptr); break;\
+  case 2: sscanf(b,f#f,ptr,ptr+1); break;\
+  case 3: sscanf(b,f#f#f,ptr,ptr+1,ptr+2); break;\
   }\
 }
-COBJ_EMITPARSETUPLECODE(float,"%f","%f %f %f",fl);
-COBJ_EMITPARSETUPLECODE(int,"%d","%d %d %d",in);
+COBJ_EMITPARSETUPLECODE(float,"%f ");
+COBJ_EMITPARSETUPLECODE(int,"%d ");
 #define COBJ_TOKEN_STR(n) case COBJ_MT_##n: { cobj_remove_br(line); mtl->n=strdup(line);} break
-#define COBJ_TOKEN_3FL(n) case COBJ_MT_##n: cobj_parseforfl(&line, 3, &mtl->n); break
-#define COBJ_TOKEN_1FL(n) case COBJ_MT_##n: cobj_parseforfl(&line, 1, &mtl->n); break
-#define COBJ_TOKEN_1IN(n) case COBJ_MT_##n: cobj_parseforin(&line, 1, &mtl->n); break
+#define COBJ_TOKEN_3FL(n) case COBJ_MT_##n: cobj_parsefloat(&line, 3, &mtl->n); break
+#define COBJ_TOKEN_1FL(n) case COBJ_MT_##n: cobj_parsefloat(&line, 1, &mtl->n); break
+#define COBJ_TOKEN_1IN(n) case COBJ_MT_##n: cobj_parseint(&line, 1, &mtl->n); break
 int cobj_load_matlib_from_filename(const char* filename, cobjMatlib* matlib)
 {
   char _line[512];
@@ -697,7 +685,7 @@ void cobj_release(cobj* obj, int flags)
   }
   cobj_deallocate(obj->g);
 
-  if ( (flags&COBJ_FLAG_MTL)!= 0 )
+  if ( (flags&COBJ_FLAG_MATERIALS)!= 0 )
     cobj_release_matlib(&obj->matlib);  
 
   obj->xyz=0; obj->uv=0; obj->n=0; obj->g=0;

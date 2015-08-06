@@ -152,8 +152,8 @@ void loadNextObj(cobj* obj)
   unsigned int ntris=0;
   unsigned int i;
 
-  cobj_release(obj,COBJ_FLAG_MTL);
-  if ( cobj_load_from_filename(names[curObj], obj, COBJ_FLAG_MTL|COBJ_FLAG_COMPUTENORMALS) )
+  cobj_release(obj,COBJ_FLAG_MATERIALS);
+  if ( cobj_load_from_filename(names[curObj], obj, COBJ_FLAG_MATERIALS|COBJ_FLAG_COMPUTENORMALS) )
   {
     adjustOrthoBounds(obj);
     // some info
@@ -194,23 +194,6 @@ void keycallback(GLFWwindow* w, int key, int scancode, int action, int mods)
   }
 }
 
-void test()
-{
-  char* line="1/1/1 2/2/2 3/3/3 4/4/4\n";
-  cobjGr gr={0};
-
-  cobj_count_faces(line,&gr);
-
-  gr.ndx_c=0; gr.n=gr.v=gr.uv=0;
-  line="1//1 2//2 3//3\n";
-  cobj_count_faces(line,&gr);
-
-  gr.ndx_c=0; gr.n=gr.v=gr.uv=0;
-  line="1 2 3 4 5 6\n";
-  cobj_count_faces(line,&gr);
-}
-
-
 int main()
 {
   char timestr[32];
@@ -226,7 +209,6 @@ int main()
   _CrtSetDbgFlag ( _CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF );
 #endif
 
-  test();
   loadNextObj(&g_obj);
 	if (!glfwInit())
 		return -1;
@@ -276,6 +258,6 @@ int main()
   }
 
 	glfwTerminate();
-  cobj_release(&g_obj, COBJ_FLAG_MTL);
+  cobj_release(&g_obj, COBJ_FLAG_MATERIALS);
 	return 0;
 }
