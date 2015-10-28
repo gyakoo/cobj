@@ -448,10 +448,10 @@ int cobj_load_from_filename(const char* filename, cobj* obj, int flags)
   int g=-1;
   float* fptr, invc;
   cobjGr* gr=0;
-  double t0;
+  //double t0;
   FILE* file = fopen(filename, "rt");
 
-  t0=glfwGetTime();
+  //t0=glfwGetTime();
 
   if ( !file ) return 0;
 
@@ -477,7 +477,7 @@ int cobj_load_from_filename(const char* filename, cobj* obj, int flags)
     }
     // actual parsing
     fseek(file,0,SEEK_SET);
-    printf( "%.2f seconds (count+alloc)\n", glfwGetTime()-t0);
+    //printf( "%.2f seconds (count+alloc)\n", glfwGetTime()-t0);
   }
 
   obj->minext.x=obj->minext.y=obj->minext.z=COBJ_FLT_MAX;
